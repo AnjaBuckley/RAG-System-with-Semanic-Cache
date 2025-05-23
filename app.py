@@ -1,32 +1,36 @@
 """
 Main Streamlit application for the RAG system.
 """
+
 import streamlit as st
 from pipeline.rag_pipeline import RAGPipeline
+
 
 def main():
     st.set_page_config(
         page_title="Advanced RAG Search Engine",
         page_icon="🔍",
         layout="wide",
-        initial_sidebar_state="expanded"
+        initial_sidebar_state="expanded",
     )
 
     st.title("🔍 Advanced RAG Search Engine")
-    st.markdown("*Retrieval-Augmented Generation with Semantic Caching and Agentic Routing*")
+    st.markdown(
+        "*Retrieval-Augmented Generation with Semantic Caching and Agentic Routing*"
+    )
 
     # Initialize the RAG pipeline and session state variables
-    if 'rag_pipeline' not in st.session_state:
+    if "rag_pipeline" not in st.session_state:
         st.session_state.rag_pipeline = RAGPipeline()
 
     # Initialize other session state variables if they don't exist
-    if 'clear_text_content' not in st.session_state:
+    if "clear_text_content" not in st.session_state:
         st.session_state.clear_text_content = False
 
-    if 'clear_uploaded_file' not in st.session_state:
+    if "clear_uploaded_file" not in st.session_state:
         st.session_state.clear_uploaded_file = False
 
-    if 'show_documents' not in st.session_state:
+    if "show_documents" not in st.session_state:
         st.session_state.show_documents = False
 
     # Sidebar for settings and stats
@@ -39,8 +43,14 @@ def main():
         # Cache settings
         st.subheader("Cache Settings")
         current_threshold = st.session_state.rag_pipeline.cache.similarity_threshold
-        new_threshold = st.slider("Similarity Threshold", min_value=0.80, max_value=1.0, value=current_threshold, step=0.01,
-                                 help="Higher values make the cache more strict (fewer hits)")
+        new_threshold = st.slider(
+            "Similarity Threshold",
+            min_value=0.80,
+            max_value=1.0,
+            value=current_threshold,
+            step=0.01,
+            help="Higher values make the cache more strict (fewer hits)",
+        )
 
         # Update the threshold if it changed
         if new_threshold != current_threshold:
@@ -57,11 +67,22 @@ def main():
 
         # Add a button to clear the cache
         if st.button("Clear Cache"):
-            if st.session_state.rag_pipeline.cache.clear_cache():
-                st.success("Cache cleared successfully!")
-                st.rerun()  # Refresh the page to update the stats
-            else:
-                st.error("Failed to clear the cache.")
+            with st.spinner("Clearing cache..."):
+                try:
+                    success = st.session_state.rag_pipeline.cache.clear_cache()
+                    if success:
+                        st.success("Cache cleared successfully!")
+                        # Wait a moment to ensure the success message is seen
+                        import time
+
+                        time.sleep(1)
+                        st.rerun()  # Refresh the page to update the stats
+                    else:
+                        st.error(
+                            "Failed to clear the cache. Check the logs for details."
+                        )
+                except Exception as e:
+                    st.error(f"Error clearing cache: {str(e)}")
 
         # About section
         st.header("ℹ️ About")
@@ -75,7 +96,9 @@ def main():
         """)
 
     # Main search interface
-    query = st.text_input("Enter your question:", placeholder="What was NVIDIA's revenue in 2023?")
+    query = st.text_input(
+        "Enter your question:", placeholder="What was NVIDIA's revenue in 2023?"
+    )
 
     if query:
         with st.spinner("Searching..."):
@@ -89,7 +112,7 @@ def main():
         if results["sources"]:
             with st.expander("📚 Sources", expanded=False):
                 for i, source in enumerate(results["sources"]):
-                    st.markdown(f"**Source {i+1}** (Score: {source['score']:.2f})")
+                    st.markdown(f"**Source {i + 1}** (Score: {source['score']:.2f})")
                     st.markdown(f"```\n{source['content']}\n```")
                     st.json(source["metadata"])
                     st.divider()
@@ -105,7 +128,7 @@ def main():
                 "Cache Hit": results["cache_hit"],
                 "Response Time": f"{results['response_time']:.2f} seconds",
                 "Routing Decision": results["routing_decision"],
-                "Web Search Used": results["web_search_used"]
+                "Web Search Used": results["web_search_used"],
             }
             st.json(metadata)
 
@@ -113,17 +136,24 @@ def main():
     st.header("📄 Document Management")
 
     # Create tabs for different upload methods
-    upload_tab, text_tab, view_tab = st.tabs(["Upload File", "Add Text", "View Documents"])
+    upload_tab, text_tab, view_tab = st.tabs(
+        ["Upload File", "Add Text", "View Documents"]
+    )
 
     with upload_tab:
         st.subheader("Upload a File")
 
         # Clear the file uploader if needed
-        if 'clear_uploaded_file' in st.session_state and st.session_state.clear_uploaded_file:
+        if (
+            "clear_uploaded_file" in st.session_state
+            and st.session_state.clear_uploaded_file
+        ):
             st.session_state.clear_uploaded_file = False
             # The file uploader will be reset on the next rerun
 
-        uploaded_file = st.file_uploader("Choose a file", type=["txt", "pdf", "doc", "docx"])
+        uploaded_file = st.file_uploader(
+            "Choose a file", type=["txt", "pdf", "doc", "docx"]
+        )
 
         # Optional metadata
         st.subheader("Document Metadata (Optional)")
@@ -141,28 +171,29 @@ def main():
                     metadata = {
                         "title": title if title else uploaded_file.name,
                         "author": author if author else "Unknown",
-                        "source": "file_upload"
+                        "source": "file_upload",
                     }
 
                     # Upload the file
                     result = st.session_state.rag_pipeline.upload_file(
-                        uploaded_file,
-                        uploaded_file.name,
-                        uploaded_file.type,
-                        metadata
+                        uploaded_file, uploaded_file.name, uploaded_file.type, metadata
                     )
 
                     # Check if the result is a list (PDF split into pages)
                     if isinstance(result, list):
-                        st.success(f"PDF document split and uploaded successfully! {len(result)} pages processed.")
+                        st.success(
+                            f"PDF document split and uploaded successfully! {len(result)} pages processed."
+                        )
                         # Show details in an expander
                         with st.expander("View Document IDs"):
                             for i, doc_id in enumerate(result):
-                                st.text(f"Page {i+1}: {doc_id}")
+                                st.text(f"Page {i + 1}: {doc_id}")
                     else:
                         # Single document uploaded
                         doc_id = result
-                        st.success(f"Document uploaded successfully! Document ID: {doc_id}")
+                        st.success(
+                            f"Document uploaded successfully! Document ID: {doc_id}"
+                        )
 
                     # Reset the file uploader by setting a flag to clear it on next rerun
                     st.session_state.clear_uploaded_file = True
@@ -175,7 +206,10 @@ def main():
         st.subheader("Add Text Document")
 
         # Initialize text content value
-        if 'clear_text_content' in st.session_state and st.session_state.clear_text_content:
+        if (
+            "clear_text_content" in st.session_state
+            and st.session_state.clear_text_content
+        ):
             st.session_state.clear_text_content = False
             st.session_state.text_content = ""
 
@@ -198,11 +232,13 @@ def main():
                     metadata = {
                         "title": title if title else "Text Document",
                         "author": author if author else "Unknown",
-                        "source": "text_input"
+                        "source": "text_input",
                     }
 
                     # Upload the text document
-                    doc_id = st.session_state.rag_pipeline.upload_text_document(doc_content, metadata)
+                    doc_id = st.session_state.rag_pipeline.upload_text_document(
+                        doc_content, metadata
+                    )
 
                     st.success(f"Document added successfully! Document ID: {doc_id}")
 
@@ -228,14 +264,16 @@ def main():
             if documents:
                 for i, doc in enumerate(documents):
                     # Determine document title
-                    doc_title = doc['metadata'].get('title', doc['id'])
+                    doc_title = doc["metadata"].get("title", doc["id"])
 
                     # Add page information for PDF pages
-                    if doc['metadata'].get('content_type') == 'pdf_page':
-                        page_num = doc['metadata'].get('page_number', '?')
-                        total_pages = doc['metadata'].get('total_pages', '?')
-                        file_name = doc['metadata'].get('file_name', 'Unknown')
-                        doc_title = f"PDF: {file_name} (Page {page_num} of {total_pages})"
+                    if doc["metadata"].get("content_type") == "pdf_page":
+                        page_num = doc["metadata"].get("page_number", "?")
+                        total_pages = doc["metadata"].get("total_pages", "?")
+                        file_name = doc["metadata"].get("file_name", "Unknown")
+                        doc_title = (
+                            f"PDF: {file_name} (Page {page_num} of {total_pages})"
+                        )
 
                     with st.expander(f"Document: {doc_title}", expanded=False):
                         st.markdown(f"**ID:** {doc['id']}")
@@ -245,6 +283,7 @@ def main():
                         st.json(doc["metadata"])
             else:
                 st.info("No documents found. Upload some documents first!")
+
 
 if __name__ == "__main__":
     main()

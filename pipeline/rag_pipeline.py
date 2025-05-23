@@ -1,6 +1,7 @@
 """
 Main RAG pipeline orchestrating all components with Supabase integration.
 """
+
 import os
 import time
 import uuid
@@ -20,13 +21,22 @@ from utils.logging_utils import logger
 # Load environment variables
 load_dotenv()
 
+
 class RAGPipeline:
     """Main RAG pipeline orchestrating all components with Supabase integration"""
 
-    def __init__(self, openai_api_key: Optional[str] = None, embedding_client_type: str = "nomic_ai"):
+    def __init__(
+        self,
+        openai_api_key: Optional[str] = None,
+        embedding_client_type: str = "nomic_ai",
+    ):
         # Initialize components with Supabase tables
-        self.vector_store = VectorStore(table_name="documents", embedding_client_type=embedding_client_type)
-        self.cache = SemanticCache(table_name="cache_entries", embedding_client_type=embedding_client_type)
+        self.vector_store = VectorStore(
+            table_name="documents", embedding_client_type=embedding_client_type
+        )
+        self.cache = SemanticCache(
+            table_name="cache_entries", embedding_client_type=embedding_client_type
+        )
         self.router = AgenticRouter()
         self.web_searcher = BraveWebSearcher()
 
@@ -50,28 +60,53 @@ class RAGPipeline:
             Document(
                 id="AAPL_2023_10K_1",
                 content="Apple Inc. reported total net sales of $394.3 billion for fiscal 2023, compared to $365.8 billion for fiscal 2022. iPhone sales represented $200.6 billion of total revenue.",
-                metadata={"company": "Apple Inc.", "filing_type": "10-K", "year": 2023, "section": "Financial Performance"}
+                metadata={
+                    "company": "Apple Inc.",
+                    "filing_type": "10-K",
+                    "year": 2023,
+                    "section": "Financial Performance",
+                },
             ),
             Document(
                 id="MSFT_2023_10K_1",
                 content="Microsoft Corporation's revenue was $211.9 billion for fiscal year 2023, an increase of 7% compared to fiscal year 2022. Azure and other cloud services revenue grew 27%.",
-                metadata={"company": "Microsoft Corporation", "filing_type": "10-K", "year": 2023, "section": "Revenue"}
+                metadata={
+                    "company": "Microsoft Corporation",
+                    "filing_type": "10-K",
+                    "year": 2023,
+                    "section": "Revenue",
+                },
             ),
             Document(
                 id="GOOGL_2023_10K_1",
                 content="Alphabet Inc.'s revenues were $307.4 billion for the year ended December 31, 2023, compared to $282.8 billion in the prior year. Google Search revenues were $175.0 billion.",
-                metadata={"company": "Alphabet Inc.", "filing_type": "10-K", "year": 2023, "section": "Business Overview"}
+                metadata={
+                    "company": "Alphabet Inc.",
+                    "filing_type": "10-K",
+                    "year": 2023,
+                    "section": "Business Overview",
+                },
             ),
             Document(
                 id="TSLA_2023_10K_1",
                 content="Tesla, Inc. automotive revenues were $82.4 billion for the year ended December 31, 2023, compared to $71.5 billion for the year ended December 31, 2022.",
-                metadata={"company": "Tesla Inc.", "filing_type": "10-K", "year": 2023, "section": "Automotive Sales"}
+                metadata={
+                    "company": "Tesla Inc.",
+                    "filing_type": "10-K",
+                    "year": 2023,
+                    "section": "Automotive Sales",
+                },
             ),
             Document(
                 id="NVDA_2023_10K_1",
                 content="NVIDIA Corporation's revenue for fiscal 2024 was a record $60.9 billion, up 126% from the previous year. Data Center revenue was $47.5 billion, up 217% from the prior year.",
-                metadata={"company": "NVIDIA Corporation", "filing_type": "10-K", "year": 2024, "section": "Financial Results"}
-            )
+                metadata={
+                    "company": "NVIDIA Corporation",
+                    "filing_type": "10-K",
+                    "year": 2024,
+                    "section": "Financial Results",
+                },
+            ),
         ]
 
         try:
@@ -84,35 +119,91 @@ class RAGPipeline:
         """Clean text by removing excessive whitespace and fixing common formatting issues"""
         import re
 
-        # Replace multiple spaces with a single space
-        text = re.sub(r'\s+', ' ', text)
+        # First, check if there are any vertically stacked characters
+        # This pattern looks for single characters separated by newlines or excessive spaces
+        vertical_text_pattern = r"(\d+\.?\d*)\s*\n?\s*([a-z])\s*\n?\s*([a-z])\s*\n?\s*([a-z])\s*\n?\s*([a-z])\s*\n?\s*([a-z])\s*\n?\s*([a-z])\s*\n?\s*([a-z])"
+        if re.search(vertical_text_pattern, text, re.IGNORECASE | re.DOTALL):
+            # If vertical text is detected, first join all lines and normalize spaces
+            text = re.sub(r"\s+", " ", text)
 
-        # Fix broken numbers (e.g., "350 b i l l i o n" -> "350 billion")
-        text = re.sub(r'(\d+)\s+([b|m|t])\s+i\s+l\s+l\s+i\s+o\s+n', r'\1 \2illion', text)
-        text = re.sub(r'(\d+)\s+billion', r'\1 billion', text)
-        text = re.sub(r'(\d+)\s+million', r'\1 million', text)
-        text = re.sub(r'(\d+)\s+trillion', r'\1 trillion', text)
+        # Replace multiple spaces and newlines with a single space
+        text = re.sub(r"\s+", " ", text)
 
-        # Fix specific pattern seen in the example
-        text = re.sub(r'(\d+)billion\.Thisfigurerepresentsa(\d+\.\d+)(\d+\.\d+)', r'\1 billion. This figure represents a \2% increase from \3 billion.', text)
-        text = re.sub(r'(\d+)b(\d+)i(\d+)l(\d+)l(\d+)i(\d+)o(\d+)n', r'\1\2\3\4\5\6\7 billion', text)
+        # Fix broken numbers with vertical text (e.g., "60.9 b i l l i o n")
+        text = re.sub(
+            r"(\d+\.?\d*)\s+b\s+i\s+l\s+l\s+i\s+o\s+n",
+            r"\1 billion",
+            text,
+            flags=re.IGNORECASE,
+        )
+        text = re.sub(
+            r"(\d+\.?\d*)\s+m\s+i\s+l\s+l\s+i\s+o\s+n",
+            r"\1 million",
+            text,
+            flags=re.IGNORECASE,
+        )
+        text = re.sub(
+            r"(\d+\.?\d*)\s+t\s+r\s+i\s+l\s+l\s+i\s+o\s+n",
+            r"\1 trillion",
+            text,
+            flags=re.IGNORECASE,
+        )
+
+        # Fix broken numbers with no spaces (e.g., "60.9billion")
+        text = re.sub(r"(\d+\.?\d*)billion", r"\1 billion", text, flags=re.IGNORECASE)
+        text = re.sub(r"(\d+\.?\d*)million", r"\1 million", text, flags=re.IGNORECASE)
+        text = re.sub(r"(\d+\.?\d*)trillion", r"\1 trillion", text, flags=re.IGNORECASE)
+
+        # Fix broken phrases like "whichwasup126"
+        text = re.sub(
+            r"which\s*was\s*up\s*(\d+\.?\d*)",
+            r"which was up \1%",
+            text,
+            flags=re.IGNORECASE,
+        )
+        text = re.sub(
+            r"whichwasup(\d+\.?\d*)", r"which was up \1%", text, flags=re.IGNORECASE
+        )
 
         # Fix broken percentages
-        text = re.sub(r'(\d+)\s*\.\s*(\d+)\s*%', r'\1.\2%', text)
+        text = re.sub(r"(\d+)\s*\.\s*(\d+)\s*%", r"\1.\2%", text)
 
-        # Remove any remaining unusual character patterns
-        text = re.sub(r'([a-zA-Z])\.([a-zA-Z])', r'\1. \2', text)  # Add space after period between words
+        # Fix specific patterns seen in examples
+        text = re.sub(
+            r"(\d+\.?\d*)\s*billion\s*,\s*which\s*was\s*up\s*(\d+\.?\d*)(\d+\.?\d*)",
+            r"\1 billion, which was up \2% from \3 billion",
+            text,
+        )
+
+        # Fix broken sentences
+        text = re.sub(r"([a-z])\.([a-z])", r"\1. \2", text, flags=re.IGNORECASE)
+
+        # Final cleanup of any remaining issues
+        text = re.sub(
+            r"(\d+)b(\d+)i(\d+)l(\d+)l(\d+)i(\d+)o(\d+)n",
+            r"\1\2\3\4\5\6\7 billion",
+            text,
+        )
+        text = re.sub(r"billion,whichwasup", r"billion, which was up ", text)
 
         return text.strip()
 
-    def _generate_answer(self, query: str, context_docs: List[Tuple[Document, float]], use_web: bool = False, web_results: str = "") -> str:
+    def _generate_answer(
+        self,
+        query: str,
+        context_docs: List[Tuple[Document, float]],
+        use_web: bool = False,
+        web_results: str = "",
+    ) -> str:
         """Generate answer using retrieved context and GPT-4.1 Mini"""
 
         # Prepare context
         context_parts = []
         if context_docs:
             for doc, score in context_docs:
-                doc_title = doc.metadata.get('title', doc.metadata.get('company', 'Unknown'))
+                doc_title = doc.metadata.get(
+                    "title", doc.metadata.get("company", "Unknown")
+                )
                 context_parts.append(f"Document ({doc_title}): {doc.content}")
 
         if web_results:
@@ -150,7 +241,9 @@ Note: This is a fallback response as the AI service is currently unavailable."""
         try:
             # Check if OpenAI API key is valid
             if not openai.api_key:
-                logger.warning("Missing OpenAI API key. Using fallback answer generation.")
+                logger.warning(
+                    "Missing OpenAI API key. Using fallback answer generation."
+                )
                 return self._generate_enhanced_mock_answer(query, context)
 
             # Log the type of API key being used
@@ -165,28 +258,42 @@ Note: This is a fallback response as the AI service is currently unavailable."""
             try:
                 # Create messages for Chat Completions API
                 messages = [
-                    {"role": "system", "content": "You are a helpful financial research assistant."},
-                    {"role": "user", "content": f"Context information:\n\n{context}\n\nQuestion: {query}"}
+                    {
+                        "role": "system",
+                        "content": "You are a helpful financial research assistant.",
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Context information:\n\n{context}\n\nQuestion: {query}",
+                    },
                 ]
 
                 response = self.openai_client.chat.completions.create(
                     model="gpt-4o",  # Using the GPT-4o model
                     messages=messages,
                     temperature=0.3,  # Lower temperature for more factual responses
-                    max_tokens=1000
+                    max_tokens=1000,
                 )
 
                 # Extract and return the generated answer
                 answer = response.choices[0].message.content.strip()
             except Exception as e:
-                logger.error(f"Error in OpenAI Chat Completions API call with gpt-4o: {str(e)}")
+                logger.error(
+                    f"Error in OpenAI Chat Completions API call with gpt-4o: {str(e)}"
+                )
                 # Try fallback to gpt-3.5-turbo
                 logger.info("Falling back to gpt-3.5-turbo model")
 
                 # Create messages for Chat Completions API
                 messages = [
-                    {"role": "system", "content": "You are a helpful financial research assistant."},
-                    {"role": "user", "content": f"Context information:\n\n{context}\n\nQuestion: {query}"}
+                    {
+                        "role": "system",
+                        "content": "You are a helpful financial research assistant.",
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Context information:\n\n{context}\n\nQuestion: {query}",
+                    },
                 ]
 
                 # Call the Chat Completions API with gpt-3.5-turbo as fallback
@@ -194,7 +301,7 @@ Note: This is a fallback response as the AI service is currently unavailable."""
                     model="gpt-3.5-turbo",
                     messages=messages,
                     temperature=0.3,
-                    max_tokens=1000
+                    max_tokens=1000,
                 )
 
                 answer = response.choices[0].message.content.strip()
@@ -208,33 +315,56 @@ Note: This is a fallback response as the AI service is currently unavailable."""
     def _generate_enhanced_mock_answer(self, query: str, context: str) -> str:
         """Generate a more sophisticated mock answer when OpenAI API is unavailable"""
         # Extract key information from context
-        context_lines = context.split('\n')
+        context_lines = context.split("\n")
         relevant_facts = []
 
         for line in context_lines:
-            if line and not line.startswith("Document") and not line.startswith("Web Information"):
+            if (
+                line
+                and not line.startswith("Document")
+                and not line.startswith("Web Information")
+            ):
                 # Look for sentences with numbers, dates, or key terms
-                if any(term in line.lower() for term in ['$', '%', 'billion', 'million', 'revenue', 'sales', 'growth', 'increase', 'decrease']):
+                if any(
+                    term in line.lower()
+                    for term in [
+                        "$",
+                        "%",
+                        "billion",
+                        "million",
+                        "revenue",
+                        "sales",
+                        "growth",
+                        "increase",
+                        "decrease",
+                    ]
+                ):
                     relevant_facts.append(line.strip())
 
         # Generate a structured answer
         answer_parts = []
-        answer_parts.append(f"Based on the provided information, I can address your question about '{query}'.")
+        answer_parts.append(
+            f"Based on the provided information, I can address your question about '{query}'."
+        )
 
         if relevant_facts:
             answer_parts.append("\nKey facts from the documents:")
             for i, fact in enumerate(relevant_facts[:3], 1):  # Limit to top 3 facts
                 answer_parts.append(f"{i}. {fact}")
 
-        answer_parts.append("\nNote: This is a generated response based on the retrieved documents. For more detailed analysis, please ensure your OpenAI API key is correctly configured.")
+        answer_parts.append(
+            "\nNote: This is a generated response based on the retrieved documents. For more detailed analysis, please ensure your OpenAI API key is correctly configured."
+        )
 
         return "\n".join(answer_parts)
 
-    def _generate_mock_answer(self, query: str, docs: List[Tuple[Document, float]], web_results: str) -> str:
+    def _generate_mock_answer(
+        self, query: str, docs: List[Tuple[Document, float]], web_results: str
+    ) -> str:
         """Generate a mock answer as fallback if the OpenAI API fails"""
         if "revenue" in query.lower() or "sales" in query.lower():
             if docs:
-                company = docs[0][0].metadata.get('company', 'the company')
+                company = docs[0][0].metadata.get("company", "the company")
                 return f"According to the latest filings, {company} has shown strong revenue performance as detailed in the retrieved documents."
 
         if "nvidia" in query.lower() and web_results:
@@ -257,7 +387,7 @@ Note: This is a fallback response as the AI service is currently unavailable."""
                 "response_time": time.time() - start_time,
                 "routing_decision": "cache",
                 "web_search_used": False,
-                "cache_debug": cache_debug
+                "cache_debug": cache_debug,
             }
 
         # Route query
@@ -275,26 +405,38 @@ Note: This is a fallback response as the AI service is currently unavailable."""
 
         # Check if query contains a year
         import re
-        years_in_query = re.findall(r'\b(19\d\d|20\d\d)\b', query)
+
+        years_in_query = re.findall(r"\b(19\d\d|20\d\d)\b", query)
         contains_recent_year = False
         if years_in_query:
             # Get current year
             import datetime
+
             current_year = datetime.datetime.now().year
             # Check if any year in query is recent (current year, last year, or next year)
-            contains_recent_year = any(int(year) >= current_year - 1 for year in years_in_query)
-            logger.info(f"Years found in query: {years_in_query}, contains recent year: {contains_recent_year}")
+            contains_recent_year = any(
+                int(year) >= current_year - 1 for year in years_in_query
+            )
+            logger.info(
+                f"Years found in query: {years_in_query}, contains recent year: {contains_recent_year}"
+            )
 
         # Handle web search if needed and allowed
         if allow_web_search and (
-            routing_decision == "web_search" or  # Router suggests web search
-            (not has_relevant_docs and contains_recent_year)  # No relevant docs and query is about recent years
+            routing_decision == "web_search"  # Router suggests web search
+            or (
+                not has_relevant_docs and contains_recent_year
+            )  # No relevant docs and query is about recent years
         ):
-            logger.info(f"Using web search. Routing decision: {routing_decision}, Has relevant docs: {has_relevant_docs}")
+            logger.info(
+                f"Using web search. Routing decision: {routing_decision}, Has relevant docs: {has_relevant_docs}"
+            )
             web_results = self.web_searcher.search(query)
 
         # Generate answer
-        answer = self._generate_answer(query, retrieved_docs, allow_web_search, web_results)
+        answer = self._generate_answer(
+            query, retrieved_docs, allow_web_search, web_results
+        )
 
         # Cache the response
         self.cache.put(query, answer)
@@ -303,14 +445,22 @@ Note: This is a fallback response as the AI service is currently unavailable."""
 
         return {
             "answer": answer,
-            "sources": [{"content": doc.content[:200] + "...", "metadata": doc.metadata, "score": float(score)}
-                       for doc, score in retrieved_docs],
+            "sources": [
+                {
+                    "content": doc.content[:200] + "...",
+                    "metadata": doc.metadata,
+                    "score": float(score),
+                }
+                for doc, score in retrieved_docs
+            ],
             "cache_hit": False,
             "response_time": response_time,
             "routing_decision": routing_decision,
-            "web_search_used": bool(web_results),  # True if web search was actually used
+            "web_search_used": bool(
+                web_results
+            ),  # True if web search was actually used
             "web_results": web_results if web_results else None,
-            "cache_debug": cache_debug
+            "cache_debug": cache_debug,
         }
 
     def upload_text_document(self, content: str, metadata: Dict = None) -> str:
@@ -331,11 +481,7 @@ Note: This is a fallback response as the AI service is currently unavailable."""
         doc_id = f"doc_{uuid.uuid4().hex[:10]}"
 
         # Create a Document object
-        document = Document(
-            id=doc_id,
-            content=content,
-            metadata=metadata
-        )
+        document = Document(id=doc_id, content=content, metadata=metadata)
 
         # Add the document to the vector store
         try:
@@ -346,7 +492,13 @@ Note: This is a fallback response as the AI service is currently unavailable."""
             logger.error(f"Error uploading document: {str(e)}")
             raise
 
-    def upload_file(self, file: BinaryIO, file_name: str, file_type: str = None, metadata: Dict = None) -> str:
+    def upload_file(
+        self,
+        file: BinaryIO,
+        file_name: str,
+        file_type: str = None,
+        metadata: Dict = None,
+    ) -> str:
         """
         Upload a file to the vector store
 
@@ -363,27 +515,25 @@ Note: This is a fallback response as the AI service is currently unavailable."""
             metadata = {}
 
         # Add file metadata
-        metadata.update({
-            "file_name": file_name,
-            "file_type": file_type,
-            "upload_time": time.time()
-        })
+        metadata.update(
+            {"file_name": file_name, "file_type": file_type, "upload_time": time.time()}
+        )
 
         # Determine file type if not provided
         if not file_type:
-            if file_name.endswith('.pdf'):
-                file_type = 'application/pdf'
-            elif file_name.endswith(('.doc', '.docx')):
-                file_type = 'application/msword'
-            elif file_name.endswith('.txt'):
-                file_type = 'text/plain'
+            if file_name.endswith(".pdf"):
+                file_type = "application/pdf"
+            elif file_name.endswith((".doc", ".docx")):
+                file_type = "application/msword"
+            elif file_name.endswith(".txt"):
+                file_type = "text/plain"
 
         # Make a copy of the file content for processing
         file_content = file.read()
         file.seek(0)  # Reset file pointer for further processing
 
         # Special handling for PDF files
-        if file_type == 'application/pdf':
+        if file_type == "application/pdf":
             try:
                 import PyPDF2
                 import io
@@ -410,21 +560,23 @@ Note: This is a fallback response as the AI service is currently unavailable."""
 
                         # Create page-specific metadata
                         page_metadata = metadata.copy()
-                        page_metadata.update({
-                            "page_number": page_num + 1,
-                            "total_pages": num_pages,
-                            "content_type": "pdf_page"
-                        })
+                        page_metadata.update(
+                            {
+                                "page_number": page_num + 1,
+                                "total_pages": num_pages,
+                                "content_type": "pdf_page",
+                            }
+                        )
 
                         # Generate a unique ID for this page
                         page_hash = hashlib.md5(page_text.encode()).hexdigest()[:10]
-                        page_doc_id = f"file_{page_hash}_p{page_num+1}"
+                        page_doc_id = f"file_{page_hash}_p{page_num + 1}"
 
                         # Create a Document object for this page
                         page_document = Document(
                             id=page_doc_id,
                             content=f"[Page {page_num + 1} of {num_pages}] {page_text}",
-                            metadata=page_metadata
+                            metadata=page_metadata,
                         )
 
                         # Add the page document to the vector store
@@ -450,11 +602,7 @@ Note: This is a fallback response as the AI service is currently unavailable."""
         doc_id = f"file_{content_hash}"
 
         # Create a Document object
-        document = Document(
-            id=doc_id,
-            content=content,
-            metadata=metadata
-        )
+        document = Document(id=doc_id, content=content, metadata=metadata)
 
         # Add the document to the vector store
         try:
@@ -465,7 +613,9 @@ Note: This is a fallback response as the AI service is currently unavailable."""
             logger.error(f"Error uploading file: {str(e)}")
             raise
 
-    def _extract_text_from_file(self, file: BinaryIO, file_name: str, file_type: str = None) -> str:
+    def _extract_text_from_file(
+        self, file: BinaryIO, file_name: str, file_type: str = None
+    ) -> str:
         """
         Extract text from a file based on its type
 
@@ -479,20 +629,20 @@ Note: This is a fallback response as the AI service is currently unavailable."""
         """
         # Determine file type if not provided
         if not file_type:
-            if file_name.endswith('.txt'):
-                file_type = 'text/plain'
-            elif file_name.endswith('.pdf'):
-                file_type = 'application/pdf'
-            elif file_name.endswith(('.doc', '.docx')):
-                file_type = 'application/msword'
+            if file_name.endswith(".txt"):
+                file_type = "text/plain"
+            elif file_name.endswith(".pdf"):
+                file_type = "application/pdf"
+            elif file_name.endswith((".doc", ".docx")):
+                file_type = "application/msword"
             else:
-                file_type = 'text/plain'  # Default to text
+                file_type = "text/plain"  # Default to text
 
         # Extract text based on file type
-        if file_type == 'text/plain':
+        if file_type == "text/plain":
             # For text files, just read the content
-            content = file.read().decode('utf-8')
-        elif file_type == 'application/pdf':
+            content = file.read().decode("utf-8")
+        elif file_type == "application/pdf":
             # Use PyPDF2 to extract text from PDF
             try:
                 import PyPDF2
@@ -520,9 +670,13 @@ Note: This is a fallback response as the AI service is currently unavailable."""
                     content = f"No text could be extracted from PDF: {file_name}"
                     logger.warning(f"No text extracted from PDF: {file_name}")
             except Exception as e:
-                content = f"Error extracting text from PDF: {file_name}. Error: {str(e)}"
-                logger.error(f"Error extracting text from PDF: {file_name}. Error: {str(e)}")
-        elif file_type.startswith('application/msword'):
+                content = (
+                    f"Error extracting text from PDF: {file_name}. Error: {str(e)}"
+                )
+                logger.error(
+                    f"Error extracting text from PDF: {file_name}. Error: {str(e)}"
+                )
+        elif file_type.startswith("application/msword"):
             # For Word documents, we would use a Word extraction library
             # This is a placeholder - in a real implementation, use python-docx, etc.
             content = f"Word document extraction not implemented. Filename: {file_name}"
@@ -530,7 +684,7 @@ Note: This is a fallback response as the AI service is currently unavailable."""
         else:
             # For unknown types, just try to read as text
             try:
-                content = file.read().decode('utf-8')
+                content = file.read().decode("utf-8")
             except UnicodeDecodeError:
                 content = f"Could not extract text from file: {file_name}"
                 logger.error(f"Could not extract text from file: {file_name}")
@@ -555,14 +709,18 @@ Note: This is a fallback response as the AI service is currently unavailable."""
             result = []
             for doc in documents:
                 # Truncate content for display
-                display_content = doc.content[:200] + "..." if len(doc.content) > 200 else doc.content
+                display_content = (
+                    doc.content[:200] + "..." if len(doc.content) > 200 else doc.content
+                )
 
-                result.append({
-                    "id": doc.id,
-                    "content": display_content,
-                    "metadata": doc.metadata,
-                    "full_content": doc.content  # Include full content for potential display
-                })
+                result.append(
+                    {
+                        "id": doc.id,
+                        "content": display_content,
+                        "metadata": doc.metadata,
+                        "full_content": doc.content,  # Include full content for potential display
+                    }
+                )
 
             return result
 
