@@ -240,12 +240,34 @@ Note: This is a fallback response as the AI service is currently unavailable."""
         routing_decision = self.router.route_query(query)
         web_results = ""
 
-        # Handle web search if needed and allowed
-        if routing_decision == "web_search" and allow_web_search:
-            web_results = self.web_searcher.search(query)
-
-        # Always search local documents
+        # Always search local documents first
         retrieved_docs = self.vector_store.search(query, top_k=5)
+
+        # Check if we found any relevant documents
+        has_relevant_docs = False
+        if retrieved_docs:
+            # Consider a document relevant if its similarity score is above 0.7
+            has_relevant_docs = any(score > 0.7 for _, score in retrieved_docs)
+
+        # Check if query contains a year
+        import re
+        years_in_query = re.findall(r'\b(19\d\d|20\d\d)\b', query)
+        contains_recent_year = False
+        if years_in_query:
+            # Get current year
+            import datetime
+            current_year = datetime.datetime.now().year
+            # Check if any year in query is recent (current year, last year, or next year)
+            contains_recent_year = any(int(year) >= current_year - 1 for year in years_in_query)
+            logger.info(f"Years found in query: {years_in_query}, contains recent year: {contains_recent_year}")
+
+        # Handle web search if needed and allowed
+        if allow_web_search and (
+            routing_decision == "web_search" or  # Router suggests web search
+            (not has_relevant_docs and contains_recent_year)  # No relevant docs and query is about recent years
+        ):
+            logger.info(f"Using web search. Routing decision: {routing_decision}, Has relevant docs: {has_relevant_docs}")
+            web_results = self.web_searcher.search(query)
 
         # Generate answer
         answer = self._generate_answer(query, retrieved_docs, allow_web_search, web_results)
@@ -262,7 +284,7 @@ Note: This is a fallback response as the AI service is currently unavailable."""
             "cache_hit": False,
             "response_time": response_time,
             "routing_decision": routing_decision,
-            "web_search_used": routing_decision == "web_search" and allow_web_search,
+            "web_search_used": bool(web_results),  # True if web search was actually used
             "web_results": web_results if web_results else None,
             "cache_debug": cache_debug
         }
