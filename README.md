@@ -5,11 +5,17 @@ A Retrieval-Augmented Generation (RAG) system with semantic caching, agentic rou
 ## Features
 
 - **Semantic Caching**: Cache similar queries to improve response time and reduce API costs
+  - Smart cache invalidation for time-sensitive queries (e.g., different years)
+  - Adjustable similarity threshold via the UI
+  - Cache statistics and manual clearing option
 - **Agentic Routing**: Intelligently route queries to the appropriate search mechanism
+  - Year-aware routing for current/future year queries
+  - Fallback to web search when local documents lack relevant information
 - **Vector Search**: Use pgvector in Supabase for efficient similarity search
-- **Web Search Integration**: Fallback to web search for recent information
+- **Web Search Integration**: Brave Search API integration for recent information
 - **Document Upload**: Upload documents to the knowledge base
 - **Streamlit UI**: User-friendly interface for interacting with the system
+- **Text Cleaning**: Automatic formatting correction for web search results
 
 ## Architecture
 
@@ -62,6 +68,7 @@ The system consists of the following components:
      BRAVE_API_KEY=your_brave_api_key
      NOMIC_API_KEY=your_nomic_api_key
      ```
+   - Note: The system uses OpenAI's GPT-4.1 model with the Responses API. If you don't have access to this model, the system will automatically fall back to GPT-3.5-turbo or provide a generated response based on retrieved documents.
 
 6. **Run the application**:
    ```bash
@@ -80,8 +87,11 @@ The system consists of the following components:
    - Use the "Add Text" tab to add text content directly
    - View uploaded documents in the "View Documents" tab
 
-3. **View cache statistics**:
+3. **Manage cache**:
    - See cache entries, hits, and hit rate in the sidebar
+   - Adjust the similarity threshold to control cache strictness
+   - Clear the cache manually when needed
+   - View detailed cache entries to understand what's being cached
 
 ## License
 
@@ -90,7 +100,7 @@ MIT
 ## Acknowledgements
 
 - [Supabase](https://supabase.com) for the vector database
-- [OpenAI](https://openai.com) for the GPT-4.1 Mini model
+- [OpenAI](https://openai.com) for the GPT-4.1 model
 - [Nomic AI](https://nomic.ai) for the embedding model
 - [Brave Search](https://brave.com/search) for the web search API
 - [Streamlit](https://streamlit.io) for the UI framework
