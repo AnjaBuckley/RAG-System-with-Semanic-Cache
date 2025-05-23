@@ -7,6 +7,7 @@ import uuid
 import hashlib
 from typing import List, Dict, Tuple, Optional, Union, BinaryIO
 import openai
+from openai import OpenAI
 from dotenv import load_dotenv
 
 from models.data_models import Document
@@ -34,6 +35,9 @@ class RAGPipeline:
             openai.api_key = openai_api_key
         else:
             openai.api_key = os.getenv("OPENAI_API_KEY")
+
+        # Initialize OpenAI client
+        self.openai_client = OpenAI(api_key=openai.api_key)
 
         # Load sample data if the vector store is empty
         self._load_sample_data_if_needed()
@@ -115,36 +119,61 @@ Note: This is a fallback response as the AI service is currently unavailable."""
         """Generate an answer using OpenAI's GPT-4.1 Mini model"""
         try:
             # Check if OpenAI API key is valid
-            if not openai.api_key or openai.api_key.startswith("sk-proj-"):
-                logger.warning("Invalid or missing OpenAI API key. Using fallback answer generation.")
+            if not openai.api_key:
+                logger.warning("Missing OpenAI API key. Using fallback answer generation.")
                 return self._generate_enhanced_mock_answer(query, context)
 
-            # Create a system message with instructions
-            system_message = """You are a helpful financial research assistant.
-            Your task is to answer questions based on the provided context information.
+            # Log the type of API key being used
+            if openai.api_key.startswith("sk-proj-"):
+                logger.info("Using project-specific OpenAI API key (sk-proj-)")
+            else:
+                logger.info("Using standard OpenAI API key (sk-)")
+
+            # Prepare the input for the Responses API
+            prompt = f"""You are a helpful financial research assistant.
+
+            Context information:
+            {context}
+
+            Question: {query}
+
+            Your task is to answer the question based on the provided context information.
             If the context doesn't contain relevant information to answer the question, acknowledge that.
             Always cite your sources from the context when providing information.
-            Be concise, accurate, and helpful."""
+            Be concise, accurate, and helpful.
+            """
 
-            # Create the messages for the API call
-            messages = [
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": f"Context information:\n\n{context}\n\nQuestion: {query}"}
-            ]
+            # Call the OpenAI Responses API with GPT-4.1
+            try:
+                response = self.openai_client.responses.create(
+                    model="gpt-4.1",  # Using the GPT-4.1 model with the Responses API
+                    input=prompt,
+                    temperature=0.3,  # Lower temperature for more factual responses
+                    max_tokens=1000
+                )
 
-            # Call the OpenAI API with GPT-4.1 Mini
-            response = openai.chat.completions.create(
-                model="gpt-4-mini",  # GPT-4.1 Mini model
-                messages=messages,
-                temperature=0.3,  # Lower temperature for more factual responses
-                max_tokens=1000,
-                top_p=0.95,
-                frequency_penalty=0,
-                presence_penalty=0
-            )
+                # Extract and return the generated answer
+                answer = response.text.strip()
+            except Exception as e:
+                logger.error(f"Error in OpenAI Responses API call: {str(e)}")
+                # Try fallback to Chat Completions API
+                logger.info("Falling back to Chat Completions API with gpt-3.5-turbo")
 
-            # Extract and return the generated answer
-            answer = response.choices[0].message.content.strip()
+                # Create messages for Chat Completions API
+                messages = [
+                    {"role": "system", "content": "You are a helpful financial research assistant."},
+                    {"role": "user", "content": f"Context information:\n\n{context}\n\nQuestion: {query}"}
+                ]
+
+                # Call the Chat Completions API with gpt-3.5-turbo as fallback
+                response = self.openai_client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=messages,
+                    temperature=0.3,
+                    max_tokens=1000
+                )
+
+                answer = response.choices[0].message.content.strip()
             return answer
 
         except Exception as e:
@@ -195,6 +224,7 @@ Note: This is a fallback response as the AI service is currently unavailable."""
 
         # Check cache first
         cached_response, cache_hit = self.cache.get(query)
+        cache_debug = {"query": query}
         if cache_hit:
             return {
                 "answer": cached_response,
@@ -202,7 +232,8 @@ Note: This is a fallback response as the AI service is currently unavailable."""
                 "cache_hit": True,
                 "response_time": time.time() - start_time,
                 "routing_decision": "cache",
-                "web_search_used": False
+                "web_search_used": False,
+                "cache_debug": cache_debug
             }
 
         # Route query
@@ -232,7 +263,8 @@ Note: This is a fallback response as the AI service is currently unavailable."""
             "response_time": response_time,
             "routing_decision": routing_decision,
             "web_search_used": routing_decision == "web_search" and allow_web_search,
-            "web_results": web_results if web_results else None
+            "web_results": web_results if web_results else None,
+            "cache_debug": cache_debug
         }
 
     def upload_text_document(self, content: str, metadata: Dict = None) -> str:
