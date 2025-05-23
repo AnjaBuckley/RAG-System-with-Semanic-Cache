@@ -357,7 +357,7 @@ Note: This is a fallback response as the AI service is currently unavailable."""
             metadata: Optional metadata for the document
 
         Returns:
-            The ID of the uploaded document
+            The ID of the uploaded document or a list of IDs if the file was split into chunks
         """
         if metadata is None:
             metadata = {}
@@ -369,6 +369,79 @@ Note: This is a fallback response as the AI service is currently unavailable."""
             "upload_time": time.time()
         })
 
+        # Determine file type if not provided
+        if not file_type:
+            if file_name.endswith('.pdf'):
+                file_type = 'application/pdf'
+            elif file_name.endswith(('.doc', '.docx')):
+                file_type = 'application/msword'
+            elif file_name.endswith('.txt'):
+                file_type = 'text/plain'
+
+        # Make a copy of the file content for processing
+        file_content = file.read()
+        file.seek(0)  # Reset file pointer for further processing
+
+        # Special handling for PDF files
+        if file_type == 'application/pdf':
+            try:
+                import PyPDF2
+                import io
+
+                # Create a PDF reader object
+                pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_content))
+
+                # Get the number of pages
+                num_pages = len(pdf_reader.pages)
+                logger.info(f"PDF has {num_pages} pages: {file_name}")
+
+                # For large PDFs, split into chunks by page
+                if num_pages > 5:  # Threshold for splitting
+                    logger.info(f"Splitting large PDF into {num_pages} chunks")
+                    doc_ids = []
+
+                    # Process each page as a separate document
+                    for page_num in range(num_pages):
+                        page = pdf_reader.pages[page_num]
+                        page_text = page.extract_text()
+
+                        if not page_text:
+                            continue  # Skip empty pages
+
+                        # Create page-specific metadata
+                        page_metadata = metadata.copy()
+                        page_metadata.update({
+                            "page_number": page_num + 1,
+                            "total_pages": num_pages,
+                            "content_type": "pdf_page"
+                        })
+
+                        # Generate a unique ID for this page
+                        page_hash = hashlib.md5(page_text.encode()).hexdigest()[:10]
+                        page_doc_id = f"file_{page_hash}_p{page_num+1}"
+
+                        # Create a Document object for this page
+                        page_document = Document(
+                            id=page_doc_id,
+                            content=f"[Page {page_num + 1} of {num_pages}] {page_text}",
+                            metadata=page_metadata
+                        )
+
+                        # Add the page document to the vector store
+                        self.vector_store.add_documents([page_document])
+                        doc_ids.append(page_doc_id)
+
+                    logger.info(f"PDF split into {len(doc_ids)} documents")
+                    return doc_ids
+
+                # For smaller PDFs, continue with normal processing
+                file.seek(0)  # Reset file pointer
+            except Exception as e:
+                logger.error(f"Error processing PDF for chunking: {str(e)}")
+                # Continue with normal processing if PDF chunking fails
+                file.seek(0)  # Reset file pointer
+
+        # Standard processing for all other files or small PDFs
         # Read the file content
         content = self._extract_text_from_file(file, file_name, file_type)
 
@@ -420,10 +493,35 @@ Note: This is a fallback response as the AI service is currently unavailable."""
             # For text files, just read the content
             content = file.read().decode('utf-8')
         elif file_type == 'application/pdf':
-            # For PDFs, we would use a PDF extraction library
-            # This is a placeholder - in a real implementation, use PyPDF2, pdfplumber, etc.
-            content = f"PDF content extraction not implemented. Filename: {file_name}"
-            logger.warning("PDF extraction not implemented")
+            # Use PyPDF2 to extract text from PDF
+            try:
+                import PyPDF2
+                import io
+
+                # Create a PDF reader object
+                pdf_reader = PyPDF2.PdfReader(io.BytesIO(file.read()))
+
+                # Get the number of pages
+                num_pages = len(pdf_reader.pages)
+                logger.info(f"PDF has {num_pages} pages: {file_name}")
+
+                # Extract text from each page
+                page_texts = []
+                for page_num in range(num_pages):
+                    page = pdf_reader.pages[page_num]
+                    page_text = page.extract_text()
+                    if page_text:
+                        page_texts.append(f"[Page {page_num + 1}] {page_text}")
+
+                # Combine all page texts
+                if page_texts:
+                    content = "\n\n".join(page_texts)
+                else:
+                    content = f"No text could be extracted from PDF: {file_name}"
+                    logger.warning(f"No text extracted from PDF: {file_name}")
+            except Exception as e:
+                content = f"Error extracting text from PDF: {file_name}. Error: {str(e)}"
+                logger.error(f"Error extracting text from PDF: {file_name}. Error: {str(e)}")
         elif file_type.startswith('application/msword'):
             # For Word documents, we would use a Word extraction library
             # This is a placeholder - in a real implementation, use python-docx, etc.

@@ -145,14 +145,24 @@ def main():
                     }
 
                     # Upload the file
-                    doc_id = st.session_state.rag_pipeline.upload_file(
+                    result = st.session_state.rag_pipeline.upload_file(
                         uploaded_file,
                         uploaded_file.name,
                         uploaded_file.type,
                         metadata
                     )
 
-                    st.success(f"Document uploaded successfully! Document ID: {doc_id}")
+                    # Check if the result is a list (PDF split into pages)
+                    if isinstance(result, list):
+                        st.success(f"PDF document split and uploaded successfully! {len(result)} pages processed.")
+                        # Show details in an expander
+                        with st.expander("View Document IDs"):
+                            for i, doc_id in enumerate(result):
+                                st.text(f"Page {i+1}: {doc_id}")
+                    else:
+                        # Single document uploaded
+                        doc_id = result
+                        st.success(f"Document uploaded successfully! Document ID: {doc_id}")
 
                     # Reset the file uploader by setting a flag to clear it on next rerun
                     st.session_state.clear_uploaded_file = True
@@ -217,7 +227,17 @@ def main():
 
             if documents:
                 for i, doc in enumerate(documents):
-                    with st.expander(f"Document: {doc['metadata'].get('title', doc['id'])}", expanded=False):
+                    # Determine document title
+                    doc_title = doc['metadata'].get('title', doc['id'])
+
+                    # Add page information for PDF pages
+                    if doc['metadata'].get('content_type') == 'pdf_page':
+                        page_num = doc['metadata'].get('page_number', '?')
+                        total_pages = doc['metadata'].get('total_pages', '?')
+                        file_name = doc['metadata'].get('file_name', 'Unknown')
+                        doc_title = f"PDF: {file_name} (Page {page_num} of {total_pages})"
+
+                    with st.expander(f"Document: {doc_title}", expanded=False):
                         st.markdown(f"**ID:** {doc['id']}")
                         st.markdown(f"**Content Preview:**")
                         st.markdown(f"```\n{doc['content']}\n```")

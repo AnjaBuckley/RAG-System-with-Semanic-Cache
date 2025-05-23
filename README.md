@@ -13,7 +13,9 @@ A Retrieval-Augmented Generation (RAG) system with semantic caching, agentic rou
   - Fallback to web search when local documents lack relevant information
 - **Vector Search**: Use pgvector in Supabase for efficient similarity search
 - **Web Search Integration**: Brave Search API integration for recent information
-- **Document Upload**: Upload documents to the knowledge base
+- **Document Upload**: Upload documents (TXT, PDF, DOCX) to the knowledge base
+  - PDF processing with automatic page splitting for large documents
+  - Page-level metadata and content extraction
 - **Streamlit UI**: User-friendly interface for interacting with the system
 - **Text Cleaning**: Automatic formatting correction for web search results
 
@@ -84,8 +86,11 @@ The system consists of the following components:
 
 2. **Upload documents**:
    - Use the "Upload File" tab to upload text, PDF, or Word documents
+     - PDF files are automatically processed and large PDFs (>5 pages) are split into individual pages
+     - Each page is stored separately with page metadata for better retrieval
    - Use the "Add Text" tab to add text content directly
    - View uploaded documents in the "View Documents" tab
+     - PDF pages are displayed with page numbers and file information
 
 3. **Manage cache**:
    - See cache entries, hits, and hit rate in the sidebar
