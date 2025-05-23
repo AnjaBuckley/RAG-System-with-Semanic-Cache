@@ -1,0 +1,109 @@
+# Environment variables
+.env
+
+# Python virtual environments
+venv/
+myvirt/
+env/
+ENV/
+.venv/
+.python-version
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Streamlit
+.streamlit/
+
+# Logs
+logs/
+*.log
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Supabase local development
+supabase/.branches/
+supabase/.temp/
+
+# OpenAI API
+openai_api_key.txt
+
+# Nomic AI
+nomic_api_key.txt
+
+# Brave Search API
+brave_api_key.txt
+
+# Temporary files
+tmp/
+temp/
+
+# Model files and embeddings
+models/
+embeddings/
+*.bin
+*.pt
+*.pth
+*.onnx
+*.h5
+
+# Large data files
+data/
+*.csv
+*.json
+*.jsonl
+*.parquet
+*.pkl
+*.pickle
+
+# Documentation build
+docs/_build/
+site/
+
+# Compiled files
+*.com
+*.class
+*.dll
+*.exe
+*.o
+*.a
+*.lib
+*.so
+*.dylib
+*.out
+*.app

@@ -1,0 +1,123 @@
+"""
+Semantic caching system using Supabase for persistence.
+"""
+import hashlib
+from datetime import datetime
+from typing import Dict, Optional, Tuple, List, Any
+import numpy as np
+
+from models.data_models import CacheEntry
+from utils.logging_utils import logger
+from utils.supabase_config import SupabaseConfig
+from utils.embedding_client import get_embedding_client, EmbeddingClient
+
+class SemanticCache:
+    """Semantic caching system using Supabase for persistence"""
+    
+    def __init__(self, similarity_threshold: float = 0.85, table_name: str = "cache_entries", embedding_client_type: str = "nomic_ai"):
+        self.similarity_threshold = similarity_threshold
+        self.table_name = table_name
+        self.encoder = get_embedding_client(embedding_client_type)
+        self.supabase = SupabaseConfig()
+        
+        # Local cache for faster access (optional)
+        self.local_cache: Dict[str, CacheEntry] = {}
+        
+        # Ensure the table exists
+        self._initialize_table()
+    
+    def _initialize_table(self):
+        """Initialize the cache table in Supabase if it doesn't exist"""
+        # Note: This assumes you've already created the table in Supabase
+        # with the appropriate pgvector extension and schema
+        # You would typically do this through Supabase UI or SQL migrations
+        logger.info(f"Using Supabase table: {self.table_name}")
+    
+    def _get_query_hash(self, query: str) -> str:
+        """Generate hash for query"""
+        return hashlib.md5(query.lower().strip().encode()).hexdigest()
+    
+    def _encode_query(self, query: str) -> np.ndarray:
+        """Encode query to embedding"""
+        embedding = self.encoder.encode(query)
+        if len(embedding.shape) > 1:
+            # If the encoder returns a batch (even for a single input), take the first one
+            return embedding[0]
+        return embedding
+    
+    def _record_to_cache_entry(self, record: Dict[str, Any]) -> CacheEntry:
+        """Convert a Supabase record to a CacheEntry object"""
+        return CacheEntry(
+            query=record["query"],
+            query_embedding=np.array(record["query_embedding"]) if record.get("query_embedding") else None,
+            response=record["response"],
+            timestamp=datetime.fromisoformat(record["timestamp"]) if isinstance(record["timestamp"], str) else record["timestamp"],
+            hit_count=record["hit_count"]
+        )
+    
+    def get(self, query: str) -> Optional[Tuple[str, bool]]:
+        """Retrieve from cache if similar query exists"""
+        query_embedding = self._encode_query(query).tolist()
+
+        # Use pgvector's similarity search to find the best match
+        result = self.supabase.client.rpc(
+            'match_cache_entry',
+            {
+                'input_query_embedding': query_embedding,
+                'similarity_threshold': self.similarity_threshold
+            }
+        ).execute()
+
+        if hasattr(result, 'data') and result.data:
+            # We found a match
+            match = result.data[0]
+            query_hash = match['query_hash']
+            similarity = match['similarity']
+
+            # Update hit count
+            self.supabase.get_table(self.table_name).update(
+                {"hit_count": match['hit_count'] + 1}
+            ).eq('query_hash', query_hash).execute()
+
+            logger.info(f"Cache HIT: {similarity:.3f} similarity")
+            return match['response'], True
+
+        logger.info("Cache MISS")
+        return None, False
+    
+    def put(self, query: str, response: str):
+        """Store in cache"""
+        query_hash = self._get_query_hash(query)
+        query_embedding = self._encode_query(query).tolist()
+        
+        # Insert into Supabase
+        record = {
+            "query_hash": query_hash,
+            "query": query,
+            "query_embedding": query_embedding,
+            "response": response,
+            "timestamp": datetime.now().isoformat(),
+            "hit_count": 1
+        }
+        
+        self.supabase.get_table(self.table_name).upsert(record).execute()
+        logger.info(f"Cached response for query: {query[:50]}...")
+    
+    def get_stats(self) -> Dict:
+        """Get cache statistics"""
+        # Get all cache entries
+        result = self.supabase.get_table(self.table_name).select("*").execute()
+        
+        if not hasattr(result, 'data') or not result.data:
+            return {"total_entries": 0, "total_hits": 0, "hit_rate": 0}
+        
+        entries = result.data
+        total_entries = len(entries)
+        total_hits = sum(entry['hit_count'] - 1 for entry in entries)  # -1 because first is not a hit
+        total_queries = total_entries + total_hits
+        
+        return {
+            "total_entries": total_entries,
+            "total_hits": total_hits,
+            "hit_rate": total_hits / total_queries if total_queries > 0 else 0
+        }
