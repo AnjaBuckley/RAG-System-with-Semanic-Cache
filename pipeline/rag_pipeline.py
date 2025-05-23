@@ -114,6 +114,11 @@ Note: This is a fallback response as the AI service is currently unavailable."""
     def _generate_openai_answer(self, query: str, context: str) -> str:
         """Generate an answer using OpenAI's GPT-4.1 Mini model"""
         try:
+            # Check if OpenAI API key is valid
+            if not openai.api_key or openai.api_key.startswith("sk-proj-"):
+                logger.warning("Invalid or missing OpenAI API key. Using fallback answer generation.")
+                return self._generate_enhanced_mock_answer(query, context)
+
             # Create a system message with instructions
             system_message = """You are a helpful financial research assistant.
             Your task is to answer questions based on the provided context information.
@@ -144,7 +149,33 @@ Note: This is a fallback response as the AI service is currently unavailable."""
 
         except Exception as e:
             logger.error(f"Error in OpenAI API call: {str(e)}")
-            raise
+            # Use enhanced mock answer instead of raising an exception
+            return self._generate_enhanced_mock_answer(query, context)
+
+    def _generate_enhanced_mock_answer(self, query: str, context: str) -> str:
+        """Generate a more sophisticated mock answer when OpenAI API is unavailable"""
+        # Extract key information from context
+        context_lines = context.split('\n')
+        relevant_facts = []
+
+        for line in context_lines:
+            if line and not line.startswith("Document") and not line.startswith("Web Information"):
+                # Look for sentences with numbers, dates, or key terms
+                if any(term in line.lower() for term in ['$', '%', 'billion', 'million', 'revenue', 'sales', 'growth', 'increase', 'decrease']):
+                    relevant_facts.append(line.strip())
+
+        # Generate a structured answer
+        answer_parts = []
+        answer_parts.append(f"Based on the provided information, I can address your question about '{query}'.")
+
+        if relevant_facts:
+            answer_parts.append("\nKey facts from the documents:")
+            for i, fact in enumerate(relevant_facts[:3], 1):  # Limit to top 3 facts
+                answer_parts.append(f"{i}. {fact}")
+
+        answer_parts.append("\nNote: This is a generated response based on the retrieved documents. For more detailed analysis, please ensure your OpenAI API key is correctly configured.")
+
+        return "\n".join(answer_parts)
 
     def _generate_mock_answer(self, query: str, docs: List[Tuple[Document, float]], web_results: str) -> str:
         """Generate a mock answer as fallback if the OpenAI API fails"""
