@@ -68,7 +68,7 @@ The system consists of the following components:
      BRAVE_API_KEY=your_brave_api_key
      NOMIC_API_KEY=your_nomic_api_key
      ```
-   - Note: The system uses OpenAI's GPT-4.1 model with the Responses API. If you don't have access to this model, the system will automatically fall back to GPT-3.5-turbo or provide a generated response based on retrieved documents.
+   - Note: The system uses OpenAI's GPT-4o model with the Chat Completions API. If you don't have access to this model, the system will automatically fall back to GPT-3.5-turbo or provide a generated response based on retrieved documents.
 
 6. **Run the application**:
    ```bash
@@ -100,7 +100,7 @@ MIT
 ## Acknowledgements
 
 - [Supabase](https://supabase.com) for the vector database
-- [OpenAI](https://openai.com) for the GPT-4.1 model
+- [OpenAI](https://openai.com) for the GPT-4o model
 - [Nomic AI](https://nomic.ai) for the embedding model
 - [Brave Search](https://brave.com/search) for the web search API
 - [Streamlit](https://streamlit.io) for the UI framework

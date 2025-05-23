@@ -127,7 +127,7 @@ class RAGPipeline:
             return "I couldn't find relevant information to answer your question."
 
         try:
-            # Use OpenAI API to generate a response with GPT-4.1 Mini
+            # Use OpenAI API to generate a response with GPT-4o
             answer = self._generate_openai_answer(query, context)
             # Clean the answer text
             return self._clean_text(answer)
@@ -146,7 +146,7 @@ Note: This is a fallback response as the AI service is currently unavailable."""
             return self._clean_text(fallback)
 
     def _generate_openai_answer(self, query: str, context: str) -> str:
-        """Generate an answer using OpenAI's GPT-4.1 Mini model"""
+        """Generate an answer using OpenAI's GPT-4o model with the Chat Completions API"""
         try:
             # Check if OpenAI API key is valid
             if not openai.api_key:
@@ -159,35 +159,29 @@ Note: This is a fallback response as the AI service is currently unavailable."""
             else:
                 logger.info("Using standard OpenAI API key (sk-)")
 
-            # Prepare the input for the Responses API
-            prompt = f"""You are a helpful financial research assistant.
+            # We'll use the Chat Completions API with messages instead of a single prompt
 
-            Context information:
-            {context}
-
-            Question: {query}
-
-            Your task is to answer the question based on the provided context information.
-            If the context doesn't contain relevant information to answer the question, acknowledge that.
-            Always cite your sources from the context when providing information.
-            Be concise, accurate, and helpful.
-            """
-
-            # Call the OpenAI Responses API with GPT-4.1
+            # Call the OpenAI API with GPT-4o
             try:
-                response = self.openai_client.responses.create(
-                    model="gpt-4.1",  # Using the GPT-4.1 model with the Responses API
-                    input=prompt,
+                # Create messages for Chat Completions API
+                messages = [
+                    {"role": "system", "content": "You are a helpful financial research assistant."},
+                    {"role": "user", "content": f"Context information:\n\n{context}\n\nQuestion: {query}"}
+                ]
+
+                response = self.openai_client.chat.completions.create(
+                    model="gpt-4o",  # Using the GPT-4o model
+                    messages=messages,
                     temperature=0.3,  # Lower temperature for more factual responses
                     max_tokens=1000
                 )
 
                 # Extract and return the generated answer
-                answer = response.text.strip()
+                answer = response.choices[0].message.content.strip()
             except Exception as e:
-                logger.error(f"Error in OpenAI Responses API call: {str(e)}")
-                # Try fallback to Chat Completions API
-                logger.info("Falling back to Chat Completions API with gpt-3.5-turbo")
+                logger.error(f"Error in OpenAI Chat Completions API call with gpt-4o: {str(e)}")
+                # Try fallback to gpt-3.5-turbo
+                logger.info("Falling back to gpt-3.5-turbo model")
 
                 # Create messages for Chat Completions API
                 messages = [
